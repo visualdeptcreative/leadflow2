@@ -1,10 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Plus, Trash2, ExternalLink, Instagram, Mail, Star, BarChart3, Users, Target, CheckCircle, XCircle, TrendingUp, Globe, Zap, Edit2, X, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Plus, Trash2, ExternalLink, Instagram, Mail, Star, BarChart3, Users, Target, CheckCircle, XCircle, TrendingUp, Globe, Zap, Edit2, X, ArrowRight, Upload, Download, Lock, Eye, EyeOff } from 'lucide-react';
 
 const NICHES = [
-  'Natural Beauty', 'Clean Skincare', 'Wellness', 'Home Decor', 'Sustainable Fashion',
-  'Organic Haircare', 'Aromatherapy', 'Candles', 'Jewelry', 'Activewear',
+  'Skincare', 'Candles', 'Natural Beauty', 'Clean Skincare', 'Wellness', 'Home Decor', 
+  'Sustainable Fashion', 'Organic Haircare', 'Aromatherapy', 'Jewelry', 'Activewear',
   'Plant-Based Beauty', 'Self-Care', 'Crystals', 'Handmade Soap', 'Essential Oils'
+];
+
+const STATUSES = [
+  'Have Not Messaged',
+  'Messaged',
+  'Replied',
+  'Follow-up Sent',
+  'Interested',
+  'Booked',
+  'Closed',
+  'Not Interested'
 ];
 
 const INSTAGRAM_HASHTAGS = [
@@ -28,45 +39,74 @@ const GOOGLE_SEARCHES = [
   'site:myshopify.com wellness brand'
 ];
 
-const ICP_CRITERIA = {
-  niche: ['beauty', 'wellness', 'home decor', 'fashion', 'skincare'],
-  locations: ['US', 'UK', 'Canada', 'Australia'],
-};
+// Simple password protection
+const APP_PASSWORD = 'visualdept2024'; // Change this to your preferred password
 
 export default function LeadGenDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState(false);
+
   const [leads, setLeads] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showAddLead, setShowAddLead] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingLead, setEditingLead] = useState(null);
+  const [showImport, setShowImport] = useState(false);
+  const fileInputRef = useRef(null);
 
+  // Check if already authenticated
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('leadGenLeads');
-      if (saved) setLeads(JSON.parse(saved));
-    } catch (e) {}
+    const auth = sessionStorage.getItem('leadflow_auth');
+    if (auth === 'true') setIsAuthenticated(true);
   }, []);
 
+  // Load leads from localStorage
   useEffect(() => {
-    try {
-      localStorage.setItem('leadGenLeads', JSON.stringify(leads));
-    } catch (e) {}
-  }, [leads]);
+    if (isAuthenticated) {
+      try {
+        const saved = localStorage.getItem('leadGenLeads');
+        if (saved) setLeads(JSON.parse(saved));
+      } catch (e) {}
+    }
+  }, [isAuthenticated]);
+
+  // Save leads to localStorage
+  useEffect(() => {
+    if (isAuthenticated) {
+      try {
+        localStorage.setItem('leadGenLeads', JSON.stringify(leads));
+      } catch (e) {}
+    }
+  }, [leads, isAuthenticated]);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (passwordInput === APP_PASSWORD) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('leadflow_auth', 'true');
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
+  };
 
   const calculateICPScore = (lead) => {
     let score = 0;
-    if (lead.followers >= 1000 && lead.followers <= 50000) score += 20;
-    else if (lead.followers > 50000 && lead.followers <= 100000) score += 10;
+    const followers = parseInt(lead.followers) || 0;
+    if (followers >= 1000 && followers <= 50000) score += 20;
+    else if (followers > 50000 && followers <= 100000) score += 10;
     if (lead.visualQuality === 'poor') score += 25;
     else if (lead.visualQuality === 'amateur') score += 20;
     else if (lead.visualQuality === 'inconsistent') score += 15;
-    if (ICP_CRITERIA.niche.some(n => lead.niche?.toLowerCase().includes(n))) score += 15;
-    if (ICP_CRITERIA.locations.includes(lead.location)) score += 15;
-    if (lead.lastPosted && new Date() - new Date(lead.lastPosted) < 7 * 24 * 60 * 60 * 1000) score += 10;
-    if (lead.hasShopify) score += 10;
+    if (['skincare', 'candles', 'beauty', 'wellness', 'home decor', 'fashion'].some(n => lead.niche?.toLowerCase().includes(n))) score += 15;
+    if (['US', 'USA', 'UK', 'Canada', 'Australia'].some(loc => lead.location?.includes(loc))) score += 15;
+    if (lead.hasShopify || lead.website) score += 10;
     if (lead.email) score += 5;
-    return score;
+    if (lead.contactName) score += 5;
+    return Math.min(score, 100);
   };
 
   const addLead = (newLead) => {
@@ -74,7 +114,6 @@ export default function LeadGenDashboard() {
       ...newLead,
       id: Date.now(),
       createdAt: new Date().toISOString(),
-      status: 'new',
       icpScore: 0,
     };
     lead.icpScore = calculateICPScore(lead);
@@ -95,17 +134,136 @@ export default function LeadGenDashboard() {
 
   const deleteLead = (id) => setLeads(leads.filter(lead => lead.id !== id));
 
+  const importCSV = (csvText) => {
+    const lines = csvText.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return;
+    
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+    const newLeads = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      // Handle CSV with quoted fields
+      const values = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let char of lines[i]) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+      
+      const row = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] || '';
+      });
+      
+      // Map to our format
+      const lead = {
+        id: Date.now() + i,
+        createdAt: new Date().toISOString(),
+        brandName: row['brand name'] || row['brandname'] || row['name'] || '',
+        niche: row['search'] || row['niche'] || row['category'] || '',
+        website: row['store link'] || row['storelink'] || row['website'] || row['url'] || '',
+        instagram: (row['social link'] || row['sociallink'] || row['instagram'] || '').replace('https://www.instagram.com/', '').replace('https://instagram.com/', '').replace('/', ''),
+        contactName: row['contact name'] || row['contactname'] || row['founder'] || row['owner'] || '',
+        location: row['location'] || row['city'] || '',
+        dateMessaged: row['date messaged'] || row['datemessaged'] || '',
+        firstMessageSent: (row['first message'] || row['firstmessage'] || '').toLowerCase() === 'yes',
+        replied: (row['replied?'] || row['replied'] || '').toLowerCase() === 'yes',
+        status: row['status'] || 'Have Not Messaged',
+        followUpSent: (row['follow-up sent?'] || row['followupsent'] || row['follow up sent'] || '').toLowerCase() === 'yes',
+        interested: (row['interested?'] || row['interested'] || '').toLowerCase() === 'yes',
+        notes: row['notes'] || row['note'] || '',
+        email: row['email'] || '',
+        followers: parseInt(row['followers']) || 0,
+        visualQuality: row['visual quality'] || row['visualquality'] || 'amateur',
+        hasShopify: true,
+        icpScore: 0
+      };
+      
+      // Map status from Google Sheets format
+      if (lead.status === 'Have Not Messaged' && lead.firstMessageSent) {
+        lead.status = 'Messaged';
+      }
+      if (lead.replied) {
+        lead.status = 'Replied';
+      }
+      if (lead.followUpSent && lead.status === 'Messaged') {
+        lead.status = 'Follow-up Sent';
+      }
+      if (lead.interested) {
+        lead.status = 'Interested';
+      }
+      
+      lead.icpScore = calculateICPScore(lead);
+      
+      if (lead.brandName) {
+        newLeads.push(lead);
+      }
+    }
+    
+    setLeads(prev => [...newLeads, ...prev]);
+    setShowImport(false);
+  };
+
+  const exportCSV = () => {
+    const headers = ['Brand Name', 'Search', 'Store Link', 'Social Link', 'Contact Name', 'Location', 'Date Messaged', 'First Message', 'Replied?', 'Status', 'Follow-up sent?', 'Interested?', 'Notes', 'ICP Score'];
+    const rows = leads.map(lead => [
+      lead.brandName,
+      lead.niche,
+      lead.website,
+      lead.instagram ? `https://www.instagram.com/${lead.instagram}/` : '',
+      lead.contactName,
+      lead.location,
+      lead.dateMessaged,
+      lead.firstMessageSent ? 'Yes' : '',
+      lead.replied ? 'Yes' : '',
+      lead.status,
+      lead.followUpSent ? 'Yes' : '',
+      lead.interested ? 'Yes' : '',
+      lead.notes,
+      lead.icpScore
+    ]);
+    
+    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell || ''}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leadflow-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        importCSV(event.target.result);
+      };
+      reader.readAsText(file);
+    }
+  };
+
   const getStatusStyle = (status) => {
     const styles = {
-      new: 'bg-stone-100 text-stone-600 border-stone-200',
-      contacted: 'bg-amber-50 text-amber-700 border-amber-200',
-      replied: 'bg-sky-50 text-sky-700 border-sky-200',
-      interested: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      booked: 'bg-violet-50 text-violet-700 border-violet-200',
-      closed: 'bg-stone-900 text-white border-stone-900',
-      lost: 'bg-red-50 text-red-600 border-red-200'
+      'Have Not Messaged': 'bg-stone-100 text-stone-600 border-stone-200',
+      'Messaged': 'bg-amber-50 text-amber-700 border-amber-200',
+      'Replied': 'bg-sky-50 text-sky-700 border-sky-200',
+      'Follow-up Sent': 'bg-violet-50 text-violet-700 border-violet-200',
+      'Interested': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      'Booked': 'bg-pink-50 text-pink-700 border-pink-200',
+      'Closed': 'bg-stone-900 text-white border-stone-900',
+      'Not Interested': 'bg-red-50 text-red-600 border-red-200'
     };
-    return styles[status] || styles.new;
+    return styles[status] || styles['Have Not Messaged'];
   };
 
   const getScoreDisplay = (score) => {
@@ -119,13 +277,19 @@ export default function LeadGenDashboard() {
     const matchesSearch = searchTerm === '' || 
       lead.brandName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       lead.instagram?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.niche?.toLowerCase().includes(searchTerm.toLowerCase());
+      lead.niche?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      lead.contactName?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
   const stats = {
     total: leads.length,
-    closed: leads.filter(l => l.status === 'closed').length,
+    notMessaged: leads.filter(l => l.status === 'Have Not Messaged').length,
+    messaged: leads.filter(l => l.status === 'Messaged').length,
+    replied: leads.filter(l => l.status === 'Replied').length,
+    interested: leads.filter(l => l.status === 'Interested').length,
+    booked: leads.filter(l => l.status === 'Booked').length,
+    closed: leads.filter(l => l.status === 'Closed').length,
     avgScore: leads.length > 0 ? Math.round(leads.reduce((a, b) => a + b.icpScore, 0) / leads.length) : 0,
     hotLeads: leads.filter(l => l.icpScore >= 70).length
   };
@@ -133,13 +297,63 @@ export default function LeadGenDashboard() {
   const serifFont = { fontFamily: "'Playfair Display', Georgia, serif" };
   const sansFont = { fontFamily: "'DM Sans', system-ui, sans-serif" };
 
+  // Login Screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-6" style={sansFont}>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet" />
+        
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <span className="text-2xl tracking-wide font-medium">LEAD</span>
+              <span className="text-stone-300">|</span>
+              <span className="text-2xl tracking-wide font-medium">FLOW.</span>
+            </div>
+            <p className="text-stone-500">Enter password to continue</p>
+          </div>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" strokeWidth={1.5} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className={`w-full pl-11 pr-11 py-3 border ${passwordError ? 'border-red-300' : 'border-stone-200'} text-sm focus:outline-none focus:border-stone-900 transition-colors`}
+                placeholder="Password"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" strokeWidth={1.5} /> : <Eye className="w-4 h-4" strokeWidth={1.5} />}
+              </button>
+            </div>
+            {passwordError && (
+              <p className="text-red-500 text-sm">Incorrect password</p>
+            )}
+            <button
+              type="submit"
+              className="w-full py-3 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors"
+            >
+              Enter
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-stone-900" style={sansFont}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet" />
 
       {/* Header */}
       <header className="border-b border-stone-200 bg-white sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-6 py-5">
+        <div className="max-w-7xl mx-auto px-6 py-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xl tracking-wide font-medium">LEAD</span>
@@ -161,18 +375,34 @@ export default function LeadGenDashboard() {
               ))}
             </nav>
 
-            <button
-              onClick={() => setShowAddLead(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-stone-900 text-white text-sm tracking-wide hover:bg-stone-800 transition-colors"
-            >
-              <Plus className="w-4 h-4" strokeWidth={1.5} />
-              Add Lead
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-2 px-4 py-2.5 border border-stone-200 text-sm tracking-wide hover:bg-stone-50 transition-colors"
+              >
+                <Upload className="w-4 h-4" strokeWidth={1.5} />
+                Import
+              </button>
+              <button
+                onClick={exportCSV}
+                className="flex items-center gap-2 px-4 py-2.5 border border-stone-200 text-sm tracking-wide hover:bg-stone-50 transition-colors"
+              >
+                <Download className="w-4 h-4" strokeWidth={1.5} />
+                Export
+              </button>
+              <button
+                onClick={() => setShowAddLead(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-stone-900 text-white text-sm tracking-wide hover:bg-stone-800 transition-colors"
+              >
+                <Plus className="w-4 h-4" strokeWidth={1.5} />
+                Add Lead
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto px-6 py-12">
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div className="space-y-16">
@@ -181,14 +411,14 @@ export default function LeadGenDashboard() {
               <p className="text-stone-500">Track and manage your ideal clients</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-px bg-stone-200">
+            <div className="grid grid-cols-4 gap-px bg-stone-200">
               {[
-                { label: 'Total Leads', value: stats.total, icon: Users },
-                { label: 'Hot Leads', value: stats.hotLeads, icon: Target },
-                { label: 'Avg. ICP Score', value: `${stats.avgScore}%`, icon: BarChart3 },
+                { label: 'Total Leads', value: stats.total },
+                { label: 'Hot Leads (70%+)', value: stats.hotLeads },
+                { label: 'Avg. ICP Score', value: `${stats.avgScore}%` },
+                { label: 'Closed Deals', value: stats.closed },
               ].map((stat, i) => (
-                <div key={i} className="bg-white p-10 text-center">
-                  <stat.icon className="w-8 h-8 mx-auto mb-4 text-stone-400" strokeWidth={1} />
+                <div key={i} className="bg-white p-8 text-center">
                   <p style={serifFont} className="text-4xl mb-2">{stat.value}</p>
                   <p className="text-sm text-stone-500 tracking-wide">{stat.label}</p>
                 </div>
@@ -198,17 +428,16 @@ export default function LeadGenDashboard() {
             <div>
               <div className="flex items-center justify-between mb-8">
                 <h2 style={serifFont} className="text-2xl">Pipeline Overview</h2>
-                <p className="text-sm text-stone-400">See how we compare to your goals</p>
               </div>
               
               <div className="border border-stone-200">
-                <div className="grid grid-cols-6 divide-x divide-stone-200">
-                  {['new', 'contacted', 'replied', 'interested', 'booked', 'closed'].map(status => {
+                <div className="grid grid-cols-8 divide-x divide-stone-200">
+                  {STATUSES.map(status => {
                     const count = leads.filter(l => l.status === status).length;
                     return (
-                      <div key={status} className="p-6 text-center">
-                        <p style={serifFont} className="text-3xl mb-2">{count}</p>
-                        <p className="text-xs text-stone-500 uppercase tracking-wider">{status}</p>
+                      <div key={status} className="p-4 text-center">
+                        <p style={serifFont} className="text-2xl mb-1">{count}</p>
+                        <p className="text-xs text-stone-500 leading-tight">{status}</p>
                       </div>
                     );
                   })}
@@ -231,19 +460,22 @@ export default function LeadGenDashboard() {
                       </div>
                       <div>
                         <p className="font-medium">{lead.brandName}</p>
-                        <p className="text-sm text-stone-400">@{lead.instagram} · {lead.niche}</p>
+                        <p className="text-sm text-stone-400">
+                          {lead.contactName && `${lead.contactName} · `}
+                          @{lead.instagram} · {lead.niche}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className={`text-xs px-3 py-1 border ${getStatusStyle(lead.status)}`}>{lead.status}</span>
-                      <button onClick={() => setActiveTab('leads')} className="p-2 hover:bg-stone-100 transition-colors">
-                        <ArrowRight className="w-4 h-4" strokeWidth={1.5} />
+                      <button onClick={() => { setEditingLead(lead); }} className="p-2 hover:bg-stone-100 transition-colors">
+                        <Edit2 className="w-4 h-4" strokeWidth={1.5} />
                       </button>
                     </div>
                   </div>
                 ))}
                 {leads.filter(l => l.icpScore >= 70).length === 0 && (
-                  <p className="text-stone-400 text-center py-12">No hot leads yet. Start prospecting!</p>
+                  <p className="text-stone-400 text-center py-12">No hot leads yet. Import your CSV or start adding leads!</p>
                 )}
               </div>
             </div>
@@ -275,85 +507,79 @@ export default function LeadGenDashboard() {
                 className="px-4 py-2 bg-transparent border border-stone-200 text-sm focus:outline-none focus:border-stone-900 cursor-pointer"
               >
                 <option value="all">All Status</option>
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="replied">Replied</option>
-                <option value="interested">Interested</option>
-                <option value="booked">Booked</option>
-                <option value="closed">Closed</option>
-                <option value="lost">Lost</option>
+                {STATUSES.map(status => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
               </select>
             </div>
 
-            <div className="border border-stone-200">
-              <table className="w-full">
+            <div className="border border-stone-200 overflow-x-auto">
+              <table className="w-full min-w-[900px]">
                 <thead>
                   <tr className="border-b border-stone-200 bg-stone-50">
-                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-6 py-4">Brand</th>
-                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-6 py-4">Score</th>
-                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-6 py-4">Status</th>
-                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-6 py-4">Contact</th>
-                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-6 py-4">Details</th>
-                    <th className="text-right text-xs font-medium text-stone-500 uppercase tracking-wider px-6 py-4">Actions</th>
+                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Brand</th>
+                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Contact</th>
+                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Score</th>
+                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Status</th>
+                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Links</th>
+                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Location</th>
+                    <th className="text-right text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {filteredLeads.map(lead => (
                     <tr key={lead.id} className="hover:bg-stone-50 transition-colors">
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
                         <p className="font-medium">{lead.brandName}</p>
                         <p className="text-sm text-stone-400">{lead.niche}</p>
                       </td>
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
+                        <p className="text-sm">{lead.contactName || '-'}</p>
+                      </td>
+                      <td className="px-4 py-4">
                         <span style={serifFont} className={`text-xl ${getScoreDisplay(lead.icpScore).color}`}>
                           {lead.icpScore}%
                         </span>
-                        {lead.icpScore >= 70 && <span className="text-xs text-stone-400 ml-2">Hot</span>}
                       </td>
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
                         <select
                           value={lead.status}
                           onChange={(e) => updateLead(lead.id, { status: e.target.value })}
-                          className={`text-xs px-3 py-1.5 border ${getStatusStyle(lead.status)} bg-transparent focus:outline-none cursor-pointer`}
+                          className={`text-xs px-2 py-1 border ${getStatusStyle(lead.status)} bg-transparent focus:outline-none cursor-pointer`}
                         >
-                          <option value="new">New</option>
-                          <option value="contacted">Contacted</option>
-                          <option value="replied">Replied</option>
-                          <option value="interested">Interested</option>
-                          <option value="booked">Booked</option>
-                          <option value="closed">Closed</option>
-                          <option value="lost">Lost</option>
+                          {STATUSES.map(status => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
                         </select>
                       </td>
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
                         <div className="flex items-center gap-1">
                           {lead.instagram && (
-                            <a href={`https://instagram.com/${lead.instagram}`} target="_blank" rel="noopener noreferrer" className="p-2 hover:bg-stone-100 transition-colors">
+                            <a href={`https://instagram.com/${lead.instagram}`} target="_blank" rel="noopener noreferrer" className="p-1.5 hover:bg-stone-100 transition-colors">
                               <Instagram className="w-4 h-4" strokeWidth={1.5} />
                             </a>
                           )}
-                          {lead.email && (
-                            <a href={`mailto:${lead.email}`} className="p-2 hover:bg-stone-100 transition-colors">
-                              <Mail className="w-4 h-4" strokeWidth={1.5} />
+                          {lead.website && (
+                            <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener noreferrer" className="p-1.5 hover:bg-stone-100 transition-colors">
+                              <Globe className="w-4 h-4" strokeWidth={1.5} />
                             </a>
                           )}
-                          {lead.website && (
-                            <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener noreferrer" className="p-2 hover:bg-stone-100 transition-colors">
-                              <Globe className="w-4 h-4" strokeWidth={1.5} />
+                          {lead.email && (
+                            <a href={`mailto:${lead.email}`} className="p-1.5 hover:bg-stone-100 transition-colors">
+                              <Mail className="w-4 h-4" strokeWidth={1.5} />
                             </a>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-5">
-                        <p className="text-sm text-stone-500">{lead.followers?.toLocaleString()} followers</p>
-                        <p className="text-sm text-stone-400">{lead.location}</p>
+                      <td className="px-4 py-4">
+                        <p className="text-sm text-stone-500">{lead.location || '-'}</p>
                       </td>
-                      <td className="px-6 py-5">
+                      <td className="px-4 py-4">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => setEditingLead(lead)} className="p-2 hover:bg-stone-100 transition-colors">
+                          <button onClick={() => setEditingLead(lead)} className="p-1.5 hover:bg-stone-100 transition-colors">
                             <Edit2 className="w-4 h-4" strokeWidth={1.5} />
                           </button>
-                          <button onClick={() => deleteLead(lead.id)} className="p-2 hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors">
+                          <button onClick={() => deleteLead(lead.id)} className="p-1.5 hover:bg-red-50 text-stone-400 hover:text-red-500 transition-colors">
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                         </div>
@@ -365,7 +591,7 @@ export default function LeadGenDashboard() {
               {filteredLeads.length === 0 && (
                 <div className="text-center py-16 text-stone-400">
                   <Users className="w-10 h-10 mx-auto mb-4 opacity-30" strokeWidth={1} />
-                  <p>No leads found. Start prospecting!</p>
+                  <p>No leads found. Import your CSV or start adding leads!</p>
                 </div>
               )}
             </div>
@@ -527,8 +753,8 @@ export default function LeadGenDashboard() {
                   { criteria: 'Poor/amateur visual quality', points: 25 },
                   { criteria: 'Niche match (beauty/wellness/etc)', points: 15 },
                   { criteria: 'Location (US/UK/CA/AU)', points: 15 },
-                  { criteria: 'Active posting (last 7 days)', points: 10 },
-                  { criteria: 'Has Shopify store', points: 10 },
+                  { criteria: 'Has website/Shopify store', points: 10 },
+                  { criteria: 'Contact name found', points: 5 },
                   { criteria: 'Email available', points: 5 },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center justify-between p-4 bg-stone-50">
@@ -558,6 +784,42 @@ export default function LeadGenDashboard() {
           serifFont={serifFont}
         />
       )}
+
+      {/* Import Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="w-full max-w-md bg-white shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-stone-200">
+              <h2 style={serifFont} className="text-xl">Import CSV</h2>
+              <button onClick={() => setShowImport(false)} className="p-2 hover:bg-stone-100 transition-colors">
+                <X className="w-5 h-5" strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-stone-500 mb-6">
+                Upload a CSV file exported from Google Sheets. The importer will automatically map columns like Brand Name, Search, Store Link, Social Link, Contact Name, Location, etc.
+              </p>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                ref={fileInputRef}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-4 border-2 border-dashed border-stone-200 hover:border-stone-400 transition-colors flex flex-col items-center gap-2"
+              >
+                <Upload className="w-6 h-6 text-stone-400" strokeWidth={1.5} />
+                <span className="text-sm text-stone-500">Click to select CSV file</span>
+              </button>
+              <p className="text-xs text-stone-400 mt-4">
+                Tip: In Google Sheets, go to File → Download → Comma-separated values (.csv)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -565,8 +827,9 @@ export default function LeadGenDashboard() {
 function LeadModal({ lead, onClose, onSave, serifFont }) {
   const [formData, setFormData] = useState(lead || {
     brandName: '', instagram: '', website: '', email: '', niche: '', followers: '',
-    location: 'US', visualQuality: 'amateur', hasShopify: true,
-    lastPosted: new Date().toISOString().split('T')[0], notes: ''
+    location: '', visualQuality: 'amateur', hasShopify: true, contactName: '',
+    dateMessaged: '', firstMessageSent: false, replied: false, followUpSent: false,
+    interested: false, status: 'Have Not Messaged', notes: ''
   });
 
   const handleSubmit = (e) => {
@@ -584,91 +847,107 @@ function LeadModal({ lead, onClose, onSave, serifFont }) {
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
-          <div className="grid grid-cols-2 gap-5">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+          <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Brand Name *</label>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Brand Name *</label>
               <input type="text" required value={formData.brandName} onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="e.g., Glow Botanicals" />
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
             </div>
             
             <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Instagram</label>
-              <input type="text" value={formData.instagram || ''} onChange={(e) => setFormData({ ...formData, instagram: e.target.value.replace('@', '') })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="@handle" />
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Contact Name</label>
+              <input type="text" value={formData.contactName || ''} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="Founder name" />
             </div>
             
             <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Followers</label>
-              <input type="number" value={formData.followers || ''} onChange={(e) => setFormData({ ...formData, followers: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="e.g., 5000" />
-            </div>
-            
-            <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Website</label>
-              <input type="text" value={formData.website || ''} onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="brand.com" />
-            </div>
-            
-            <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Email</label>
-              <input type="email" value={formData.email || ''} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="hello@brand.com" />
-            </div>
-            
-            <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Niche</label>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Niche</label>
               <select value={formData.niche || ''} onChange={(e) => setFormData({ ...formData, niche: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
-                <option value="">Select niche</option>
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
+                <option value="">Select</option>
                 {NICHES.map(niche => <option key={niche} value={niche}>{niche}</option>)}
               </select>
             </div>
             
             <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Location</label>
-              <select value={formData.location || 'US'} onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
-                <option value="US">United States</option>
-                <option value="UK">United Kingdom</option>
-                <option value="Canada">Canada</option>
-                <option value="Australia">Australia</option>
-                <option value="Other">Other</option>
-              </select>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Instagram</label>
+              <input type="text" value={formData.instagram || ''} onChange={(e) => setFormData({ ...formData, instagram: e.target.value.replace('@', '').replace('https://www.instagram.com/', '').replace('/', '') })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="handle" />
             </div>
             
             <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Visual Quality</label>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Website</label>
+              <input type="text" value={formData.website || ''} onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="https://" />
+            </div>
+            
+            <div>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Email</label>
+              <input type="email" value={formData.email || ''} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
+            </div>
+            
+            <div>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Location</label>
+              <input type="text" value={formData.location || ''} onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="City, State, USA" />
+            </div>
+            
+            <div>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Visual Quality</label>
               <select value={formData.visualQuality || 'amateur'} onChange={(e) => setFormData({ ...formData, visualQuality: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
-                <option value="poor">Poor (iPhone + ring light)</option>
-                <option value="amateur">Amateur (inconsistent)</option>
-                <option value="inconsistent">Inconsistent (mixed)</option>
-                <option value="good">Good (not ideal)</option>
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
+                <option value="poor">Poor</option>
+                <option value="amateur">Amateur</option>
+                <option value="inconsistent">Inconsistent</option>
+                <option value="good">Good</option>
               </select>
             </div>
             
             <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Last Posted</label>
-              <input type="date" value={formData.lastPosted?.split('T')[0] || ''} onChange={(e) => setFormData({ ...formData, lastPosted: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Status</label>
+              <select value={formData.status || 'Have Not Messaged'} onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
+                {STATUSES.map(status => <option key={status} value={status}>{status}</option>)}
+              </select>
             </div>
             
-            <div className="flex items-center gap-3 pt-6">
-              <input type="checkbox" id="hasShopify" checked={formData.hasShopify || false} onChange={(e) => setFormData({ ...formData, hasShopify: e.target.checked })} className="w-4 h-4" />
-              <label htmlFor="hasShopify" className="text-sm text-stone-600">Has Shopify store</label>
+            <div>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Date Messaged</label>
+              <input type="date" value={formData.dateMessaged || ''} onChange={(e) => setFormData({ ...formData, dateMessaged: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
             </div>
             
             <div className="col-span-2">
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-2">Notes</label>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Notes</label>
               <textarea value={formData.notes || ''} onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-4 py-3 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none" rows={3} placeholder="Any observations..." />
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none" rows={2} />
+            </div>
+            
+            <div className="col-span-2 flex flex-wrap gap-4 pt-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={formData.firstMessageSent || false} onChange={(e) => setFormData({ ...formData, firstMessageSent: e.target.checked })} />
+                First Message Sent
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={formData.replied || false} onChange={(e) => setFormData({ ...formData, replied: e.target.checked })} />
+                Replied
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={formData.followUpSent || false} onChange={(e) => setFormData({ ...formData, followUpSent: e.target.checked })} />
+                Follow-up Sent
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={formData.interested || false} onChange={(e) => setFormData({ ...formData, interested: e.target.checked })} />
+                Interested
+              </label>
             </div>
           </div>
           
           <div className="flex gap-3 pt-4">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-3 border border-stone-200 text-sm hover:bg-stone-50 transition-colors">Cancel</button>
-            <button type="submit" className="flex-1 px-4 py-3 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors">{lead ? 'Save Changes' : 'Add Lead'}</button>
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 border border-stone-200 text-sm hover:bg-stone-50 transition-colors">Cancel</button>
+            <button type="submit" className="flex-1 px-4 py-2.5 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors">{lead ? 'Save' : 'Add Lead'}</button>
           </div>
         </form>
       </div>
