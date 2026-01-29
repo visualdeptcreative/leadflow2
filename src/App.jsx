@@ -128,38 +128,52 @@ const generateMessageWithAI = async (lead) => {
   const visualQuality = lead.visualQuality || 'amateur';
   const instagram = lead.instagram || '';
   const website = lead.website || '';
+  const visualNotes = lead.visualNotes || '';
 
-  const prompt = `You are writing a cold Instagram DM for Visual Dept (a product photography agency) to send to ${brandName}.
+  // Different prompt based on whether we have visual notes
+  const hasNotes = visualNotes && visualNotes.trim().length > 0;
+  
+  const prompt = hasNotes 
+    ? `Write a cold Instagram DM for Visual Dept (product photography agency) to ${brandName}.
 
-BRAND DETAILS:
-- Brand Name: ${brandName}
-- Niche/Category: ${niche}
-- Instagram Handle: ${instagram ? `@${instagram}` : 'not provided'}
-- Website: ${website || 'not provided'}
-- Contact Name: ${contactName || 'not provided'}
+WHAT I NOTICED ABOUT THEIR BRAND: ${visualNotes}
+NICHE: ${niche}
 
-YOUR TASK: Write a unique, personalized DM that feels like you actually looked at their brand. Create a SPECIFIC compliment that could ONLY apply to this brand based on their name, niche, and any details provided.
+Write exactly 3 sentences:
+1. "Hey!" + specific compliment using the notes above (mention exactly what I noticed - the colors, products, aesthetic, packaging, vibe)
+2. "I run Visual Dept and we help brands create [visual benefit that would enhance what they already have]."
+3. "Want a free concept mockup for one of your [their specific product type]?"
 
-FORMAT (exactly 3 sentences):
-1. "Hey!" + a UNIQUE, SPECIFIC compliment about their brand/products. Be creative - reference their brand name, imagine what their products might look like based on their niche, mention textures, colors, vibes, or feelings their products might evoke. Make it feel personal, not generic.
-2. "I run Visual Dept and we help brands create [benefit specific to what THEY would need based on their niche]."
-3. "Want a free concept mockup for one of your products?" (or slight variation like "for one of your [specific product type]?")
+RULES:
+- Use my notes to make the compliment SPECIFIC and REAL
+- NO em dashes (—)
+- NO emojis  
+- NO mentioning AI, pricing, or delivery times
+- Around 40-50 words total
+- Sound natural, like a real person who browsed their page
 
-EXAMPLES OF GOOD SPECIFIC COMPLIMENTS:
-- For "Glow Botanics" (skincare): "Your plant-powered formulas deserve visuals as fresh as the ingredients"
-- For "Ember & Oak" (candles): "The warm, woody aesthetic of your candle line is so inviting"
-- For "Wild Roots Wellness": "Love how your brand captures that back-to-nature wellness vibe"
-- For "Silk & Stone Jewelry": "Your pieces have such an elegant, timeless quality"
+OUTPUT: Just the message.`
+    
+    : `Write a cold Instagram DM for Visual Dept (product photography agency) to ${brandName}.
 
-STRICT RULES:
-- NO em dashes (—) anywhere
+BRAND: ${brandName}
+NICHE: ${niche}
+INSTAGRAM: ${instagram || 'unknown'}
+
+Write exactly 3 sentences:
+1. "Hey!" + compliment that references their brand name or niche specifically
+2. "I run Visual Dept and we help brands create [relevant visual benefit for their niche]."
+3. "Want a free concept mockup for one of your products?"
+
+RULES:
+- Make the compliment feel specific, not generic
+- NO em dashes (—)
 - NO emojis
-- NO mentioning AI, pricing, percentages, or delivery times
-- Keep it casual and natural
-- Make the compliment SPECIFIC to this brand, not generic
-- Total: 3 sentences, around 40-50 words
+- NO mentioning AI, pricing, or delivery times
+- Around 40-50 words total
+- Don't say "love what you're building" or other generic phrases
 
-OUTPUT: Just the DM text, nothing else.`;
+OUTPUT: Just the message.`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -362,6 +376,7 @@ export default function LeadGenDashboard() {
         email: row['email'] || '',
         followers: parseInt(row['followers']) || 0,
         visualQuality: (row['visual quality'] || row['visualquality'] || 'amateur').toLowerCase().trim(),
+        visualNotes: row['visual notes'] || row['visualnotes'] || row['product notes'] || '',
         hasShopify: true,
         icpScore: 0
       };
@@ -1053,23 +1068,28 @@ export default function LeadGenDashboard() {
             </div>
             <div className="p-6">
               <div className="bg-stone-50 p-4 rounded-lg mb-4">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="flex-1">
-                    <p className="text-xs text-stone-400 uppercase tracking-wider mb-2">Lead Info</p>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <p><span className="text-stone-400">Contact:</span> {showMessageModal.contactName || 'Unknown'}</p>
-                      <p><span className="text-stone-400">Niche:</span> {showMessageModal.niche || 'Unknown'}</p>
-                      <p><span className="text-stone-400">Visual:</span> {showMessageModal.visualQuality || 'Unknown'}</p>
-                      <p><span className="text-stone-400">Score:</span> {showMessageModal.icpScore}%</p>
-                    </div>
-                  </div>
+                <p className="text-xs text-stone-400 uppercase tracking-wider mb-2">Lead Info</p>
+                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                  <p><span className="text-stone-400">Niche:</span> {showMessageModal.niche || 'Unknown'}</p>
+                  <p><span className="text-stone-400">Score:</span> {showMessageModal.icpScore}%</p>
                 </div>
+                {showMessageModal.visualNotes ? (
+                  <div className="pt-2 border-t border-stone-200">
+                    <p className="text-xs text-emerald-600 uppercase tracking-wider mb-1">✓ Visual Notes</p>
+                    <p className="text-sm text-stone-600">{showMessageModal.visualNotes}</p>
+                  </div>
+                ) : (
+                  <div className="pt-2 border-t border-stone-200">
+                    <p className="text-xs text-amber-600 uppercase tracking-wider mb-1">⚠ No Visual Notes</p>
+                    <p className="text-xs text-stone-400">Add visual notes when editing this lead for better personalized messages</p>
+                  </div>
+                )}
               </div>
               
               <div className="mb-4">
                 <p className="text-xs text-stone-400 uppercase tracking-wider mb-2">Generated Message</p>
                 {isGeneratingMessage ? (
-                  <div className="w-full h-48 border border-stone-200 flex items-center justify-center">
+                  <div className="w-full h-32 border border-stone-200 flex items-center justify-center">
                     <div className="flex items-center gap-3 text-stone-400">
                       <Loader2 className="w-5 h-5 animate-spin" />
                       <span>Generating personalized message...</span>
@@ -1079,7 +1099,7 @@ export default function LeadGenDashboard() {
                   <textarea
                     value={generatedMessage}
                     onChange={(e) => setGeneratedMessage(e.target.value)}
-                    className="w-full h-48 p-4 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none"
+                    className="w-full h-32 p-4 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none"
                     placeholder="Message will appear here..."
                   />
                 )}
@@ -1181,6 +1201,7 @@ function LeadModal({ lead, onClose, onSave, serifFont }) {
     followers: '',
     location: '',
     visualQuality: 'amateur',
+    visualNotes: '',
     hasShopify: true,
     contactName: '',
     dateMessaged: '',
@@ -1304,6 +1325,19 @@ function LeadModal({ lead, onClose, onSave, serifFont }) {
                 <option value="inconsistent">Inconsistent</option>
                 <option value="good">Good (lowest priority)</option>
               </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">
+                Visual Notes <span className="text-amber-600">(for AI message)</span>
+              </label>
+              <input
+                type="text"
+                value={formData.visualNotes || ''}
+                onChange={(e) => setFormData({ ...formData, visualNotes: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+                placeholder="e.g. amber glass serums, minimal packaging, earthy tones, botanical ingredients"
+              />
+              <p className="text-xs text-stone-400 mt-1">Quick notes on what you see - products, colors, vibe, packaging</p>
             </div>
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Status</label>
