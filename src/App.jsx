@@ -129,33 +129,37 @@ const generateMessageWithAI = async (lead) => {
   const instagram = lead.instagram || '';
   const website = lead.website || '';
 
-  const prompt = `Write a short Instagram DM for Visual Dept, a creative agency that helps DTC brands with product visuals.
+  const prompt = `You are writing a cold Instagram DM for Visual Dept (a product photography agency) to send to ${brandName}.
 
-LEAD INFO:
-- Brand: ${brandName}
-- Contact: ${contactName || 'Unknown'}
-- Niche: ${niche}
-- Instagram: ${instagram ? `@${instagram}` : 'Unknown'}
+BRAND DETAILS:
+- Brand Name: ${brandName}
+- Niche/Category: ${niche}
+- Instagram Handle: ${instagram ? `@${instagram}` : 'not provided'}
+- Website: ${website || 'not provided'}
+- Contact Name: ${contactName || 'not provided'}
 
-EXAMPLE MESSAGES (match this exact style and length):
-"Hey! Your botanical body oils look luxurious. I run Visual Dept and we help brands create cohesive product visuals that showcase the quality and texture. Want a free concept mockup for one of your products?"
+YOUR TASK: Write a unique, personalized DM that feels like you actually looked at their brand. Create a SPECIFIC compliment that could ONLY apply to this brand based on their name, niche, and any details provided.
 
-"Hey! Love the earthy aesthetic of your candle line. I run Visual Dept and we help brands create stunning product visuals that capture that cozy, artisanal vibe. Want a free concept mockup for one of your candles?"
+FORMAT (exactly 3 sentences):
+1. "Hey!" + a UNIQUE, SPECIFIC compliment about their brand/products. Be creative - reference their brand name, imagine what their products might look like based on their niche, mention textures, colors, vibes, or feelings their products might evoke. Make it feel personal, not generic.
+2. "I run Visual Dept and we help brands create [benefit specific to what THEY would need based on their niche]."
+3. "Want a free concept mockup for one of your products?" (or slight variation like "for one of your [specific product type]?")
 
-"Hey! Your serums look incredible. I run Visual Dept and we help skincare brands create clean, elevated product visuals. Want a free concept mockup for one of your products?"
+EXAMPLES OF GOOD SPECIFIC COMPLIMENTS:
+- For "Glow Botanics" (skincare): "Your plant-powered formulas deserve visuals as fresh as the ingredients"
+- For "Ember & Oak" (candles): "The warm, woody aesthetic of your candle line is so inviting"
+- For "Wild Roots Wellness": "Love how your brand captures that back-to-nature wellness vibe"
+- For "Silk & Stone Jewelry": "Your pieces have such an elegant, timeless quality"
 
 STRICT RULES:
-1. EXACTLY 3 sentences, no more
-2. Sentence 1: "Hey!" + ONE specific compliment about their products (mention something specific to their niche)
-3. Sentence 2: "I run Visual Dept and we help brands create [specific visual benefit relevant to their niche]."
-4. Sentence 3: "Want a free concept mockup for one of your products?"
-5. NO em dashes (—), NO colons in the middle of sentences
-6. NO emojis
-7. NO mentioning AI, pricing, or delivery times
-8. Keep it casual and conversational
-9. Total length: 40-60 words max
+- NO em dashes (—) anywhere
+- NO emojis
+- NO mentioning AI, pricing, percentages, or delivery times
+- Keep it casual and natural
+- Make the compliment SPECIFIC to this brand, not generic
+- Total: 3 sentences, around 40-50 words
 
-OUTPUT: Just the message, nothing else.`;
+OUTPUT: Just the DM text, nothing else.`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -186,44 +190,33 @@ OUTPUT: Just the message, nothing else.`;
   }
 };
 
-// Fallback message generator (template-based)
+// Fallback message generator (template-based but uses brand name)
 const generateFallbackMessage = (lead) => {
   const brandName = lead.brandName || 'your brand';
   const niche = (lead.niche || 'beauty').toLowerCase();
   
-  let productCompliment = "Your products look amazing";
+  // Create a somewhat personalized message using brand name
+  let productType = "products";
   let visualBenefit = "create stunning product visuals that stand out";
   
   if (niche.includes('skincare') || niche.includes('beauty')) {
-    productCompliment = "Your skincare line looks incredible";
-    visualBenefit = "create clean, elevated product visuals that highlight quality ingredients";
+    productType = "skincare line";
+    visualBenefit = "create clean, elevated visuals that highlight quality ingredients";
   } else if (niche.includes('candle')) {
-    productCompliment = "Love the cozy aesthetic of your candle line";
-    visualBenefit = "create warm, inviting product visuals that capture that artisanal vibe";
+    productType = "candles";
+    visualBenefit = "create warm, inviting visuals that capture that artisanal feel";
   } else if (niche.includes('wellness') || niche.includes('supplement')) {
-    productCompliment = "Your wellness products look so clean and modern";
-    visualBenefit = "create fresh, trustworthy product visuals that build credibility";
+    productType = "wellness products";
+    visualBenefit = "create fresh, trustworthy visuals that build credibility";
   } else if (niche.includes('jewelry')) {
-    productCompliment = "Your jewelry pieces are stunning";
-    visualBenefit = "create elegant product visuals that showcase the craftsmanship";
+    productType = "pieces";
+    visualBenefit = "create elegant visuals that showcase the craftsmanship";
   } else if (niche.includes('home') || niche.includes('decor')) {
-    productCompliment = "Love the aesthetic of your home collection";
-    visualBenefit = "create lifestyle product visuals that inspire";
-  } else if (niche.includes('fashion') || niche.includes('activewear')) {
-    productCompliment = "Your pieces have such a unique style";
-    visualBenefit = "create dynamic product visuals that capture the look and feel";
-  } else if (niche.includes('haircare') || niche.includes('hair')) {
-    productCompliment = "Your haircare line looks luxurious";
-    visualBenefit = "create sleek product visuals that showcase the premium quality";
-  } else if (niche.includes('soap') || niche.includes('handmade')) {
-    productCompliment = "Love the handcrafted look of your products";
-    visualBenefit = "create artisanal product visuals that highlight the craftsmanship";
-  } else if (niche.includes('oil') || niche.includes('aromatherapy')) {
-    productCompliment = "Your botanical oils look luxurious";
-    visualBenefit = "create cohesive product visuals that showcase the quality and texture";
+    productType = "collection";
+    visualBenefit = "create lifestyle visuals that inspire";
   }
   
-  return `Hey! ${productCompliment}. I run Visual Dept and we help brands ${visualBenefit}. Want a free concept mockup for one of your products?`;
+  return `Hey! Love what ${brandName} is building. I run Visual Dept and we help brands ${visualBenefit}. Want a free concept mockup for one of your ${productType}?`;
 };
 
 export default function LeadGenDashboard() {
