@@ -1,21 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, ExternalLink, Instagram, Mail, Star, BarChart3, Users, Target, CheckCircle, XCircle, TrendingUp, Globe, Zap, Edit2, X, ArrowRight, Upload, Download, Lock, Eye, EyeOff } from 'lucide-react';
+import { Search, Plus, Trash2, ExternalLink, Instagram, Mail, Star, BarChart3, Users, Target, CheckCircle, XCircle, TrendingUp, Globe, Zap, Edit2, X, ArrowRight, Upload, Download, Lock, Eye, EyeOff, MessageCircle, Sparkles, Copy, Check, Loader2, RefreshCw } from 'lucide-react';
 
 const NICHES = [
-  'Skincare', 'Candles', 'Natural Beauty', 'Clean Skincare', 'Wellness', 'Home Decor', 
+  'Skincare', 'Candles', 'Natural Beauty', 'Clean Skincare', 'Wellness', 'Home Decor',
   'Sustainable Fashion', 'Organic Haircare', 'Aromatherapy', 'Jewelry', 'Activewear',
-  'Plant-Based Beauty', 'Self-Care', 'Crystals', 'Handmade Soap', 'Essential Oils'
+  'Plant-Based Beauty', 'Self-Care', 'Crystals', 'Handmade Soap', 'Essential Oils',
+  'Wellness/Supplements', 'Wellness/Gut Health'
 ];
 
 const STATUSES = [
-  'Have Not Messaged',
-  'Messaged',
-  'Replied',
-  'Follow-up Sent',
-  'Interested',
-  'Booked',
-  'Closed',
-  'Not Interested'
+  'Have Not Messaged', 'Messaged', 'Replied', 'Follow-up Sent',
+  'Interested', 'Booked', 'Closed', 'Not Interested'
 ];
 
 const INSTAGRAM_HASHTAGS = [
@@ -39,15 +34,186 @@ const GOOGLE_SEARCHES = [
   'site:myshopify.com wellness brand'
 ];
 
+// US states list for location matching
+const US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
+  'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT',
+  'VA', 'WA', 'WV', 'WI', 'WY', 'DC',
+  'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut',
+  'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa',
+  'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan',
+  'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire',
+  'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma',
+  'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee',
+  'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'
+];
+
+// Check if location is in the US
+const isUSLocation = (location) => {
+  if (!location) return false;
+  const loc = location.toLowerCase().trim();
+  
+  // Check for explicit US indicators
+  if (loc.includes('usa') || loc.includes('united states') || loc === 'us') return true;
+  
+  // Check for state names or abbreviations
+  const locationParts = loc.split(/[,\s]+/);
+  for (const part of locationParts) {
+    const cleanPart = part.trim();
+    if (US_STATES.some(state => state.toLowerCase() === cleanPart)) {
+      return true;
+    }
+  }
+  
+  // Check if location ends with a US state abbreviation pattern like "City, CA" or "City, California"
+  const stateMatch = loc.match(/,\s*([a-z]{2}|\w+)$/i);
+  if (stateMatch) {
+    const potentialState = stateMatch[1].trim();
+    if (US_STATES.some(state => state.toLowerCase() === potentialState.toLowerCase())) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
 // Simple password protection
-const APP_PASSWORD = 'visualdept2024'; // Change this to your preferred password
+const APP_PASSWORD = 'visualdept2024';
+
+// Calculate ICP Score - FIXED VERSION
+const calculateICPScore = (lead) => {
+  let score = 0;
+  const followers = parseInt(lead.followers) || 0;
+
+  // Follower count scoring (20 points max)
+  if (followers >= 1000 && followers <= 50000) score += 20;
+  else if (followers > 50000 && followers <= 100000) score += 10;
+
+  // Visual quality scoring (25 points max) - case insensitive
+  const visualQuality = (lead.visualQuality || '').toLowerCase().trim();
+  if (visualQuality === 'poor') score += 25;
+  else if (visualQuality === 'amateur') score += 20;
+  else if (visualQuality === 'inconsistent') score += 15;
+  else if (visualQuality === 'good') score += 5;
+
+  // Niche match scoring (15 points)
+  const nicheMatch = ['skincare', 'candles', 'beauty', 'wellness', 'home decor', 'fashion', 'jewelry', 'haircare', 'soap', 'oils', 'aromatherapy', 'self-care', 'crystals', 'activewear', 'supplements', 'gut health'];
+  const leadNiche = (lead.niche || '').toLowerCase();
+  if (nicheMatch.some(n => leadNiche.includes(n))) score += 15;
+
+  // Location scoring (15 points) - US ONLY
+  if (isUSLocation(lead.location)) score += 15;
+
+  // Has website/Shopify (10 points)
+  if (lead.hasShopify || lead.website) score += 10;
+
+  // Email available (5 points)
+  if (lead.email) score += 5;
+
+  // Contact name found (5 points)
+  if (lead.contactName) score += 5;
+
+  // Has Instagram (5 points)
+  if (lead.instagram) score += 5;
+
+  return Math.min(score, 100);
+};
+
+// Generate message using Claude API
+const generateMessageWithAI = async (lead) => {
+  const brandName = lead.brandName || 'your brand';
+  const contactName = lead.contactName || '';
+  const niche = lead.niche || 'beauty/wellness';
+  const visualQuality = lead.visualQuality || 'amateur';
+  const instagram = lead.instagram || '';
+  const website = lead.website || '';
+
+  const prompt = `You are helping create a personalized Instagram DM for Visual Dept, a creative agency that provides AI-powered visual content services to DTC brands.
+
+CONTEXT:
+- Brand Name: ${brandName}
+- Contact Name: ${contactName || 'Unknown'}
+- Niche: ${niche}
+- Current Visual Quality: ${visualQuality}
+- Instagram: ${instagram ? `@${instagram}` : 'Unknown'}
+- Website: ${website || 'Unknown'}
+
+WRITING GUIDELINES:
+1. Keep it SHORT - max 4-5 sentences total
+2. Start with a warm, casual greeting (use first name if available)
+3. Include ONE specific compliment about their brand (be genuine, not generic)
+4. Briefly mention what you do (AI-powered visuals, 70% less than traditional shoots, 72-hour delivery)
+5. End with a soft, low-pressure CTA (offer to show examples or create a sample)
+6. Use natural, conversational tone - not salesy
+7. Include 1-2 emojis max, placed naturally
+8. NO hashtags, NO excessive punctuation
+
+PSYCHOLOGICAL PRINCIPLES TO USE:
+- Reciprocity: Offer value first (free sample/mockup)
+- Social proof: Subtly mention working with "brands like theirs"
+- Curiosity: Create interest without revealing everything
+- Personalization: Make them feel seen, not mass-messaged
+
+OUTPUT: Just the message text, nothing else. No quotes, no explanations.`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [
+          { role: "user", content: prompt }
+        ],
+      })
+    });
+
+    const data = await response.json();
+    
+    if (data.content && data.content[0] && data.content[0].text) {
+      return data.content[0].text.trim();
+    }
+    
+    throw new Error('Invalid response from API');
+  } catch (error) {
+    console.error('AI generation error:', error);
+    // Return a fallback template-based message
+    return generateFallbackMessage(lead);
+  }
+};
+
+// Fallback message generator (template-based)
+const generateFallbackMessage = (lead) => {
+  const brandName = lead.brandName || 'your brand';
+  const contactName = lead.contactName || '';
+  const niche = (lead.niche || 'beauty').toLowerCase();
+  
+  const greeting = contactName ? `Hey ${contactName.split(' ')[0]}! 👋` : `Hey! 👋`;
+  
+  let nicheCompliment = "Your brand has such a unique story";
+  if (niche.includes('skincare')) nicheCompliment = "The ingredients story you tell is so authentic";
+  else if (niche.includes('candle')) nicheCompliment = "The mood your candles create is everything";
+  else if (niche.includes('wellness')) nicheCompliment = "Your holistic approach really resonates";
+  else if (niche.includes('beauty')) nicheCompliment = "Love seeing brands committed to clean beauty";
+  
+  return `${greeting}
+
+${nicheCompliment}. I see so much potential in ${brandName}'s visual story.
+
+I help brands like yours create scroll-stopping visuals using AI—70% less than traditional shoots, delivered in 72 hours.
+
+Would love to show you what's possible—can I put together a quick visual concept for you?`;
+};
 
 export default function LeadGenDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
-
   const [leads, setLeads] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showAddLead, setShowAddLead] = useState(false);
@@ -55,6 +221,10 @@ export default function LeadGenDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingLead, setEditingLead] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [showMessageModal, setShowMessageModal] = useState(null);
+  const [generatedMessage, setGeneratedMessage] = useState('');
+  const [copiedMessage, setCopiedMessage] = useState(false);
+  const [isGeneratingMessage, setIsGeneratingMessage] = useState(false);
   const fileInputRef = useRef(null);
 
   // Check if already authenticated
@@ -63,22 +233,34 @@ export default function LeadGenDashboard() {
     if (auth === 'true') setIsAuthenticated(true);
   }, []);
 
-  // Load leads from localStorage
+  // Load leads from localStorage and recalculate scores
   useEffect(() => {
     if (isAuthenticated) {
       try {
         const saved = localStorage.getItem('leadGenLeads');
-        if (saved) setLeads(JSON.parse(saved));
-      } catch (e) {}
+        if (saved) {
+          const loadedLeads = JSON.parse(saved);
+          // Recalculate ICP scores on load
+          const updatedLeads = loadedLeads.map(lead => ({
+            ...lead,
+            icpScore: calculateICPScore(lead)
+          }));
+          setLeads(updatedLeads);
+        }
+      } catch (e) {
+        console.error('Error loading leads:', e);
+      }
     }
   }, [isAuthenticated]);
 
   // Save leads to localStorage
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && leads.length > 0) {
       try {
         localStorage.setItem('leadGenLeads', JSON.stringify(leads));
-      } catch (e) {}
+      } catch (e) {
+        console.error('Error saving leads:', e);
+      }
     }
   }, [leads, isAuthenticated]);
 
@@ -91,22 +273,6 @@ export default function LeadGenDashboard() {
     } else {
       setPasswordError(true);
     }
-  };
-
-  const calculateICPScore = (lead) => {
-    let score = 0;
-    const followers = parseInt(lead.followers) || 0;
-    if (followers >= 1000 && followers <= 50000) score += 20;
-    else if (followers > 50000 && followers <= 100000) score += 10;
-    if (lead.visualQuality === 'poor') score += 25;
-    else if (lead.visualQuality === 'amateur') score += 20;
-    else if (lead.visualQuality === 'inconsistent') score += 15;
-    if (['skincare', 'candles', 'beauty', 'wellness', 'home decor', 'fashion'].some(n => lead.niche?.toLowerCase().includes(n))) score += 15;
-    if (['US', 'USA', 'UK', 'Canada', 'Australia'].some(loc => lead.location?.includes(loc))) score += 15;
-    if (lead.hasShopify || lead.website) score += 10;
-    if (lead.email) score += 5;
-    if (lead.contactName) score += 5;
-    return Math.min(score, 100);
   };
 
   const addLead = (newLead) => {
@@ -137,16 +303,15 @@ export default function LeadGenDashboard() {
   const importCSV = (csvText) => {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) return;
-    
+
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
     const newLeads = [];
-    
+
     for (let i = 1; i < lines.length; i++) {
-      // Handle CSV with quoted fields
       const values = [];
       let current = '';
       let inQuotes = false;
-      
+
       for (let char of lines[i]) {
         if (char === '"') {
           inQuotes = !inQuotes;
@@ -158,12 +323,12 @@ export default function LeadGenDashboard() {
         }
       }
       values.push(current.trim());
-      
+
       const row = {};
       headers.forEach((header, index) => {
         row[header] = values[index] || '';
       });
-      
+
       // Map to our format
       const lead = {
         id: Date.now() + i,
@@ -171,7 +336,10 @@ export default function LeadGenDashboard() {
         brandName: row['brand name'] || row['brandname'] || row['name'] || '',
         niche: row['search'] || row['niche'] || row['category'] || '',
         website: row['store link'] || row['storelink'] || row['website'] || row['url'] || '',
-        instagram: (row['social link'] || row['sociallink'] || row['instagram'] || '').replace('https://www.instagram.com/', '').replace('https://instagram.com/', '').replace('/', ''),
+        instagram: (row['social link'] || row['sociallink'] || row['instagram'] || '')
+          .replace('https://www.instagram.com/', '')
+          .replace('https://instagram.com/', '')
+          .replace('/', ''),
         contactName: row['contact name'] || row['contactname'] || row['founder'] || row['owner'] || '',
         location: row['location'] || row['city'] || '',
         dateMessaged: row['date messaged'] || row['datemessaged'] || '',
@@ -183,11 +351,11 @@ export default function LeadGenDashboard() {
         notes: row['notes'] || row['note'] || '',
         email: row['email'] || '',
         followers: parseInt(row['followers']) || 0,
-        visualQuality: row['visual quality'] || row['visualquality'] || 'amateur',
+        visualQuality: (row['visual quality'] || row['visualquality'] || 'amateur').toLowerCase().trim(),
         hasShopify: true,
         icpScore: 0
       };
-      
+
       // Map status from Google Sheets format
       if (lead.status === 'Have Not Messaged' && lead.firstMessageSent) {
         lead.status = 'Messaged';
@@ -201,20 +369,20 @@ export default function LeadGenDashboard() {
       if (lead.interested) {
         lead.status = 'Interested';
       }
-      
+
       lead.icpScore = calculateICPScore(lead);
-      
+
       if (lead.brandName) {
         newLeads.push(lead);
       }
     }
-    
+
     setLeads(prev => [...newLeads, ...prev]);
     setShowImport(false);
   };
 
   const exportCSV = () => {
-    const headers = ['Brand Name', 'Search', 'Store Link', 'Social Link', 'Contact Name', 'Location', 'Date Messaged', 'First Message', 'Replied?', 'Status', 'Follow-up sent?', 'Interested?', 'Notes', 'ICP Score'];
+    const headers = ['Brand Name', 'Search', 'Store Link', 'Social Link', 'Contact Name', 'Location', 'Date Messaged', 'First Message', 'Replied?', 'Status', 'Follow-up sent?', 'Interested?', 'Notes', 'ICP Score', 'Visual Quality'];
     const rows = leads.map(lead => [
       lead.brandName,
       lead.niche,
@@ -229,9 +397,9 @@ export default function LeadGenDashboard() {
       lead.followUpSent ? 'Yes' : '',
       lead.interested ? 'Yes' : '',
       lead.notes,
-      lead.icpScore
+      lead.icpScore,
+      lead.visualQuality
     ]);
-    
     const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell || ''}"`).join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -252,6 +420,45 @@ export default function LeadGenDashboard() {
     }
   };
 
+  const handleGenerateMessage = async (lead) => {
+    setShowMessageModal(lead);
+    setGeneratedMessage('');
+    setCopiedMessage(false);
+    setIsGeneratingMessage(true);
+    
+    try {
+      const message = await generateMessageWithAI(lead);
+      setGeneratedMessage(message);
+    } catch (error) {
+      console.error('Error generating message:', error);
+      setGeneratedMessage(generateFallbackMessage(lead));
+    } finally {
+      setIsGeneratingMessage(false);
+    }
+  };
+
+  const handleRegenerateMessage = async () => {
+    if (showMessageModal) {
+      setIsGeneratingMessage(true);
+      setCopiedMessage(false);
+      try {
+        const message = await generateMessageWithAI(showMessageModal);
+        setGeneratedMessage(message);
+      } catch (error) {
+        console.error('Error regenerating message:', error);
+        setGeneratedMessage(generateFallbackMessage(showMessageModal));
+      } finally {
+        setIsGeneratingMessage(false);
+      }
+    }
+  };
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(generatedMessage);
+    setCopiedMessage(true);
+    setTimeout(() => setCopiedMessage(false), 2000);
+  };
+
   const getStatusStyle = (status) => {
     const styles = {
       'Have Not Messaged': 'bg-stone-100 text-stone-600 border-stone-200',
@@ -267,20 +474,23 @@ export default function LeadGenDashboard() {
   };
 
   const getScoreDisplay = (score) => {
-    if (score >= 70) return { color: 'text-stone-900' };
-    if (score >= 50) return { color: 'text-stone-600' };
-    return { color: 'text-stone-400' };
+    if (score >= 70) return { color: 'text-stone-900', bg: 'bg-emerald-50' };
+    if (score >= 50) return { color: 'text-stone-600', bg: 'bg-amber-50' };
+    return { color: 'text-stone-400', bg: 'bg-stone-50' };
   };
 
   const filteredLeads = leads.filter(lead => {
     const matchesStatus = filterStatus === 'all' || lead.status === filterStatus;
-    const matchesSearch = searchTerm === '' || 
+    const matchesSearch = searchTerm === '' ||
       lead.brandName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       lead.instagram?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       lead.niche?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       lead.contactName?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
+
+  // Hot leads are those with 70%+ ICP score
+  const hotLeads = leads.filter(l => l.icpScore >= 70).sort((a, b) => b.icpScore - a.icpScore);
 
   const stats = {
     total: leads.length,
@@ -291,7 +501,7 @@ export default function LeadGenDashboard() {
     booked: leads.filter(l => l.status === 'Booked').length,
     closed: leads.filter(l => l.status === 'Closed').length,
     avgScore: leads.length > 0 ? Math.round(leads.reduce((a, b) => a + b.icpScore, 0) / leads.length) : 0,
-    hotLeads: leads.filter(l => l.icpScore >= 70).length
+    hotLeads: hotLeads.length
   };
 
   const serifFont = { fontFamily: "'Playfair Display', Georgia, serif" };
@@ -302,7 +512,6 @@ export default function LeadGenDashboard() {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-6" style={sansFont}>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet" />
-        
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center gap-2 mb-4">
@@ -312,7 +521,6 @@ export default function LeadGenDashboard() {
             </div>
             <p className="text-stone-500">Enter password to continue</p>
           </div>
-          
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" strokeWidth={1.5} />
@@ -335,10 +543,7 @@ export default function LeadGenDashboard() {
             {passwordError && (
               <p className="text-red-500 text-sm">Incorrect password</p>
             )}
-            <button
-              type="submit"
-              className="w-full py-3 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors"
-            >
+            <button type="submit" className="w-full py-3 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors">
               Enter
             </button>
           </form>
@@ -350,7 +555,7 @@ export default function LeadGenDashboard() {
   return (
     <div className="min-h-screen bg-white text-stone-900" style={sansFont}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet" />
-
+      
       {/* Header */}
       <header className="border-b border-stone-200 bg-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-5">
@@ -360,7 +565,6 @@ export default function LeadGenDashboard() {
               <span className="text-stone-300">|</span>
               <span className="text-xl tracking-wide font-medium">FLOW.</span>
             </div>
-            
             <nav className="flex items-center gap-8">
               {['dashboard', 'leads', 'search', 'icp'].map(tab => (
                 <button
@@ -374,7 +578,6 @@ export default function LeadGenDashboard() {
                 </button>
               ))}
             </nav>
-
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowImport(true)}
@@ -429,7 +632,6 @@ export default function LeadGenDashboard() {
               <div className="flex items-center justify-between mb-8">
                 <h2 style={serifFont} className="text-2xl">Pipeline Overview</h2>
               </div>
-              
               <div className="border border-stone-200">
                 <div className="grid grid-cols-8 divide-x divide-stone-200">
                   {STATUSES.map(status => {
@@ -450,39 +652,64 @@ export default function LeadGenDashboard() {
                 <h2 style={serifFont} className="text-2xl">Hot Leads</h2>
                 <p className="text-sm text-stone-400">70%+ ICP Match</p>
               </div>
-              
               <div className="border border-stone-200 divide-y divide-stone-200">
-                {leads.filter(l => l.icpScore >= 70).slice(0, 5).map(lead => (
+                {hotLeads.slice(0, 10).map(lead => (
                   <div key={lead.id} className="flex items-center justify-between p-6 hover:bg-stone-50 transition-colors">
                     <div className="flex items-center gap-8">
                       <div className="w-16 text-center">
-                        <p style={serifFont} className="text-2xl">{lead.icpScore}%</p>
+                        <p style={serifFont} className="text-2xl text-emerald-600">{lead.icpScore}%</p>
                       </div>
                       <div>
                         <p className="font-medium">{lead.brandName}</p>
                         <p className="text-sm text-stone-400">
-                          {lead.contactName && `${lead.contactName} · `}
-                          @{lead.instagram} · {lead.niche}
+                          {lead.instagram && `@${lead.instagram} · `}
+                          {lead.niche}
+                          {lead.location && ` · ${lead.location}`}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                       <span className={`text-xs px-3 py-1 border ${getStatusStyle(lead.status)}`}>{lead.status}</span>
-                      <button onClick={() => { setEditingLead(lead); }} className="p-2 hover:bg-stone-100 transition-colors">
+                      <button
+                        onClick={() => handleGenerateMessage(lead)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-stone-900 text-white text-xs hover:bg-stone-800 transition-colors"
+                        title="Generate personalized DM with AI"
+                      >
+                        <Sparkles className="w-3 h-3" strokeWidth={1.5} />
+                        Generate DM
+                      </button>
+                      <button
+                        onClick={() => setEditingLead(lead)}
+                        className="p-2 hover:bg-stone-100 transition-colors"
+                      >
                         <Edit2 className="w-4 h-4" strokeWidth={1.5} />
                       </button>
                     </div>
                   </div>
                 ))}
-                {leads.filter(l => l.icpScore >= 70).length === 0 && (
-                  <p className="text-stone-400 text-center py-12">No hot leads yet. Import your CSV or start adding leads!</p>
+                {hotLeads.length === 0 && (
+                  <div className="text-stone-400 text-center py-12">
+                    <Zap className="w-10 h-10 mx-auto mb-4 opacity-30" strokeWidth={1} />
+                    <p className="mb-2 font-medium">No hot leads yet</p>
+                    <p className="text-sm mb-4">Hot leads need 70%+ ICP score. To qualify, leads should have:</p>
+                    <div className="text-sm space-y-1 text-left max-w-xs mx-auto">
+                      <p>• Visual quality: "poor" (+25) or "amateur" (+20)</p>
+                      <p>• Matching niche: skincare, candles, wellness, etc. (+15)</p>
+                      <p>• US location (+15)</p>
+                      <p>• 1K-50K followers (+20)</p>
+                      <p>• Website/Shopify store (+10)</p>
+                      <p>• Instagram handle (+5)</p>
+                      <p>• Email available (+5)</p>
+                      <p>• Contact name (+5)</p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Leads Tab */}
+        {/* Leads Tab - CONTACT COLUMN REMOVED */}
         {activeTab === 'leads' && (
           <div className="space-y-8">
             <div className="flex items-center justify-between">
@@ -518,7 +745,6 @@ export default function LeadGenDashboard() {
                 <thead>
                   <tr className="border-b border-stone-200 bg-stone-50">
                     <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Brand</th>
-                    <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Contact</th>
                     <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Score</th>
                     <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Status</th>
                     <th className="text-left text-xs font-medium text-stone-500 uppercase tracking-wider px-4 py-3">Links</th>
@@ -534,10 +760,10 @@ export default function LeadGenDashboard() {
                         <p className="text-sm text-stone-400">{lead.niche}</p>
                       </td>
                       <td className="px-4 py-4">
-                        <p className="text-sm">{lead.contactName || '-'}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span style={serifFont} className={`text-xl ${getScoreDisplay(lead.icpScore).color}`}>
+                        <span 
+                          style={serifFont} 
+                          className={`text-xl px-2 py-0.5 rounded ${getScoreDisplay(lead.icpScore).color} ${lead.icpScore >= 70 ? 'bg-emerald-50' : ''}`}
+                        >
                           {lead.icpScore}%
                         </span>
                       </td>
@@ -576,6 +802,13 @@ export default function LeadGenDashboard() {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleGenerateMessage(lead)}
+                            className="p-1.5 hover:bg-stone-100 transition-colors"
+                            title="Generate DM with AI"
+                          >
+                            <MessageCircle className="w-4 h-4" strokeWidth={1.5} />
+                          </button>
                           <button onClick={() => setEditingLead(lead)} className="p-1.5 hover:bg-stone-100 transition-colors">
                             <Edit2 className="w-4 h-4" strokeWidth={1.5} />
                           </button>
@@ -662,7 +895,13 @@ export default function LeadGenDashboard() {
                   { name: 'Social Blade', url: 'https://socialblade.com', desc: 'Track Instagram growth' },
                   { name: 'Hunter.io', url: 'https://hunter.io', desc: 'Find email addresses' },
                 ].map(tool => (
-                  <a key={tool.name} href={tool.url} target="_blank" rel="noopener noreferrer" className="p-8 bg-white hover:bg-stone-50 transition-colors group">
+                  <a
+                    key={tool.name}
+                    href={tool.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-8 bg-white hover:bg-stone-50 transition-colors group"
+                  >
                     <div className="flex items-center justify-between mb-3">
                       <span className="font-medium">{tool.name}</span>
                       <ExternalLink className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={1.5} />
@@ -675,7 +914,7 @@ export default function LeadGenDashboard() {
           </div>
         )}
 
-        {/* ICP Tab */}
+        {/* ICP Tab - UPDATED FOR US ONLY */}
         {activeTab === 'icp' && (
           <div className="max-w-4xl mx-auto space-y-16">
             <div className="text-center">
@@ -690,7 +929,7 @@ export default function LeadGenDashboard() {
                   <h3 style={serifFont} className="text-xl">Demographics</h3>
                 </div>
                 <ul className="space-y-4 text-stone-600">
-                  {['Female founder, age 28-45', 'DTC Shopify store (beauty, wellness, home, fashion)', 'Based in US, UK, Canada, or Australia', '1-3 employees (or solopreneur with VA)'].map((item, i) => (
+                  {['Female founder, age 28-45', 'DTC Shopify store (beauty, wellness, home, fashion)', 'Based in United States only', '1-3 employees (or solopreneur with VA)'].map((item, i) => (
                     <li key={i} className="flex items-start gap-3">
                       <CheckCircle className="w-4 h-4 text-stone-400 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
                       {item}
@@ -698,7 +937,6 @@ export default function LeadGenDashboard() {
                   ))}
                 </ul>
               </div>
-
               <div className="bg-white p-10">
                 <div className="flex items-center gap-3 mb-6">
                   <BarChart3 className="w-5 h-5" strokeWidth={1} />
@@ -713,7 +951,6 @@ export default function LeadGenDashboard() {
                   ))}
                 </ul>
               </div>
-
               <div className="bg-white p-10">
                 <div className="flex items-center gap-3 mb-6">
                   <XCircle className="w-5 h-5" strokeWidth={1} />
@@ -728,7 +965,6 @@ export default function LeadGenDashboard() {
                   ))}
                 </ul>
               </div>
-
               <div className="bg-white p-10">
                 <div className="flex items-center gap-3 mb-6">
                   <TrendingUp className="w-5 h-5" strokeWidth={1} />
@@ -750,10 +986,11 @@ export default function LeadGenDashboard() {
               <div className="grid md:grid-cols-2 gap-4">
                 {[
                   { criteria: 'Follower count (1K-50K)', points: 20 },
-                  { criteria: 'Poor/amateur visual quality', points: 25 },
+                  { criteria: 'Poor/amateur visual quality', points: '25/20' },
                   { criteria: 'Niche match (beauty/wellness/etc)', points: 15 },
-                  { criteria: 'Location (US/UK/CA/AU)', points: 15 },
+                  { criteria: 'Location (US only)', points: 15 },
                   { criteria: 'Has website/Shopify store', points: 10 },
+                  { criteria: 'Has Instagram', points: 5 },
                   { criteria: 'Contact name found', points: 5 },
                   { criteria: 'Email available', points: 5 },
                 ].map((item, i) => (
@@ -780,9 +1017,106 @@ export default function LeadGenDashboard() {
         <LeadModal
           lead={editingLead}
           onClose={() => setEditingLead(null)}
-          onSave={(data) => { updateLead(editingLead.id, data); setEditingLead(null); }}
+          onSave={(data) => {
+            updateLead(editingLead.id, data);
+            setEditingLead(null);
+          }}
           serifFont={serifFont}
         />
+      )}
+
+      {/* AI Message Generation Modal */}
+      {showMessageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="w-full max-w-lg bg-white shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-stone-200">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 style={serifFont} className="text-xl">AI-Powered DM</h2>
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                </div>
+                <p className="text-sm text-stone-400 mt-1">for {showMessageModal.brandName}</p>
+              </div>
+              <button onClick={() => setShowMessageModal(null)} className="p-2 hover:bg-stone-100 transition-colors">
+                <X className="w-5 h-5" strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-stone-50 p-4 rounded-lg mb-4">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="flex-1">
+                    <p className="text-xs text-stone-400 uppercase tracking-wider mb-2">Lead Info</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <p><span className="text-stone-400">Contact:</span> {showMessageModal.contactName || 'Unknown'}</p>
+                      <p><span className="text-stone-400">Niche:</span> {showMessageModal.niche || 'Unknown'}</p>
+                      <p><span className="text-stone-400">Visual:</span> {showMessageModal.visualQuality || 'Unknown'}</p>
+                      <p><span className="text-stone-400">Score:</span> {showMessageModal.icpScore}%</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <p className="text-xs text-stone-400 uppercase tracking-wider mb-2">Generated Message</p>
+                {isGeneratingMessage ? (
+                  <div className="w-full h-48 border border-stone-200 flex items-center justify-center">
+                    <div className="flex items-center gap-3 text-stone-400">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Generating personalized message...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <textarea
+                    value={generatedMessage}
+                    onChange={(e) => setGeneratedMessage(e.target.value)}
+                    className="w-full h-48 p-4 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none"
+                    placeholder="Message will appear here..."
+                  />
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRegenerateMessage}
+                  disabled={isGeneratingMessage}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-stone-200 text-sm hover:bg-stone-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isGeneratingMessage ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+                  Regenerate
+                </button>
+                <button
+                  onClick={handleCopyMessage}
+                  disabled={isGeneratingMessage || !generatedMessage}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {copiedMessage ? (
+                    <>
+                      <Check className="w-4 h-4" strokeWidth={1.5} />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" strokeWidth={1.5} />
+                      Copy Message
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {showMessageModal.instagram && (
+                <a
+                  href={`https://instagram.com/${showMessageModal.instagram}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 mt-3 px-4 py-2.5 border border-stone-200 text-sm hover:bg-stone-50 transition-colors w-full"
+                >
+                  <Instagram className="w-4 h-4" strokeWidth={1.5} />
+                  Open @{showMessageModal.instagram} on Instagram
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Import Modal */}
@@ -797,7 +1131,7 @@ export default function LeadGenDashboard() {
             </div>
             <div className="p-6">
               <p className="text-sm text-stone-500 mb-6">
-                Upload a CSV file exported from Google Sheets. The importer will automatically map columns like Brand Name, Search, Store Link, Social Link, Contact Name, Location, etc.
+                Upload a CSV file exported from Google Sheets. The importer will automatically map columns like Brand Name, Search, Store Link, Social Link, Contact Name, Location, Visual Quality, etc.
               </p>
               <input
                 type="file"
@@ -816,6 +1150,9 @@ export default function LeadGenDashboard() {
               <p className="text-xs text-stone-400 mt-4">
                 Tip: In Google Sheets, go to File → Download → Comma-separated values (.csv)
               </p>
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-100 text-xs text-amber-700">
+                <strong>Important:</strong> Make sure your CSV has a "Visual Quality" column with values like "poor", "amateur", or "inconsistent" for accurate ICP scoring. Also include US-based location data for best results.
+              </div>
             </div>
           </div>
         </div>
@@ -826,15 +1163,32 @@ export default function LeadGenDashboard() {
 
 function LeadModal({ lead, onClose, onSave, serifFont }) {
   const [formData, setFormData] = useState(lead || {
-    brandName: '', instagram: '', website: '', email: '', niche: '', followers: '',
-    location: '', visualQuality: 'amateur', hasShopify: true, contactName: '',
-    dateMessaged: '', firstMessageSent: false, replied: false, followUpSent: false,
-    interested: false, status: 'Have Not Messaged', notes: ''
+    brandName: '',
+    instagram: '',
+    website: '',
+    email: '',
+    niche: '',
+    followers: '',
+    location: '',
+    visualQuality: 'amateur',
+    hasShopify: true,
+    contactName: '',
+    dateMessaged: '',
+    firstMessageSent: false,
+    replied: false,
+    followUpSent: false,
+    interested: false,
+    status: 'Have Not Messaged',
+    notes: ''
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave({ ...formData, followers: parseInt(formData.followers) || 0 });
+    onSave({
+      ...formData,
+      followers: parseInt(formData.followers) || 0,
+      visualQuality: (formData.visualQuality || 'amateur').toLowerCase()
+    });
   };
 
   return (
@@ -846,105 +1200,164 @@ function LeadModal({ lead, onClose, onSave, serifFont }) {
             <X className="w-5 h-5" strokeWidth={1.5} />
           </button>
         </div>
-        
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Brand Name *</label>
-              <input type="text" required value={formData.brandName} onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
+              <input
+                type="text"
+                required
+                value={formData.brandName}
+                onChange={(e) => setFormData({ ...formData, brandName: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+              />
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Contact Name</label>
-              <input type="text" value={formData.contactName || ''} onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="Founder name" />
+              <input
+                type="text"
+                value={formData.contactName || ''}
+                onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+                placeholder="Founder name"
+              />
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Niche</label>
-              <select value={formData.niche || ''} onChange={(e) => setFormData({ ...formData, niche: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
+              <select
+                value={formData.niche || ''}
+                onChange={(e) => setFormData({ ...formData, niche: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white"
+              >
                 <option value="">Select</option>
                 {NICHES.map(niche => <option key={niche} value={niche}>{niche}</option>)}
               </select>
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Instagram</label>
-              <input type="text" value={formData.instagram || ''} onChange={(e) => setFormData({ ...formData, instagram: e.target.value.replace('@', '').replace('https://www.instagram.com/', '').replace('/', '') })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="handle" />
+              <input
+                type="text"
+                value={formData.instagram || ''}
+                onChange={(e) => setFormData({ ...formData, instagram: e.target.value.replace('@', '').replace('https://www.instagram.com/', '').replace('/', '') })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+                placeholder="handle"
+              />
             </div>
-            
+            <div>
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Followers</label>
+              <input
+                type="number"
+                value={formData.followers || ''}
+                onChange={(e) => setFormData({ ...formData, followers: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+                placeholder="e.g. 15000"
+              />
+            </div>
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Website</label>
-              <input type="text" value={formData.website || ''} onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="https://" />
+              <input
+                type="text"
+                value={formData.website || ''}
+                onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+                placeholder="https://"
+              />
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Email</label>
-              <input type="email" value={formData.email || ''} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
+              <input
+                type="email"
+                value={formData.email || ''}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+              />
             </div>
-            
             <div>
-              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Location</label>
-              <input type="text" value={formData.location || ''} onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" placeholder="City, State, USA" />
+              <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Location (US only)</label>
+              <input
+                type="text"
+                value={formData.location || ''}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+                placeholder="City, State or USA"
+              />
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Visual Quality</label>
-              <select value={formData.visualQuality || 'amateur'} onChange={(e) => setFormData({ ...formData, visualQuality: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
-                <option value="poor">Poor</option>
+              <select
+                value={formData.visualQuality || 'amateur'}
+                onChange={(e) => setFormData({ ...formData, visualQuality: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white"
+              >
+                <option value="poor">Poor (highest priority)</option>
                 <option value="amateur">Amateur</option>
                 <option value="inconsistent">Inconsistent</option>
-                <option value="good">Good</option>
+                <option value="good">Good (lowest priority)</option>
               </select>
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Status</label>
-              <select value={formData.status || 'Have Not Messaged'} onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white">
+              <select
+                value={formData.status || 'Have Not Messaged'}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 bg-white"
+              >
                 {STATUSES.map(status => <option key={status} value={status}>{status}</option>)}
               </select>
             </div>
-            
             <div>
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Date Messaged</label>
-              <input type="date" value={formData.dateMessaged || ''} onChange={(e) => setFormData({ ...formData, dateMessaged: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900" />
+              <input
+                type="date"
+                value={formData.dateMessaged || ''}
+                onChange={(e) => setFormData({ ...formData, dateMessaged: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900"
+              />
             </div>
-            
             <div className="col-span-2">
               <label className="block text-xs text-stone-500 uppercase tracking-wider mb-1">Notes</label>
-              <textarea value={formData.notes || ''} onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none" rows={2} />
+              <textarea
+                value={formData.notes || ''}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                className="w-full px-3 py-2 border border-stone-200 text-sm focus:outline-none focus:border-stone-900 resize-none"
+                rows={2}
+              />
             </div>
-            
             <div className="col-span-2 flex flex-wrap gap-4 pt-2">
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={formData.firstMessageSent || false} onChange={(e) => setFormData({ ...formData, firstMessageSent: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={formData.firstMessageSent || false}
+                  onChange={(e) => setFormData({ ...formData, firstMessageSent: e.target.checked })}
+                />
                 First Message Sent
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={formData.replied || false} onChange={(e) => setFormData({ ...formData, replied: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={formData.replied || false}
+                  onChange={(e) => setFormData({ ...formData, replied: e.target.checked })}
+                />
                 Replied
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={formData.followUpSent || false} onChange={(e) => setFormData({ ...formData, followUpSent: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={formData.followUpSent || false}
+                  onChange={(e) => setFormData({ ...formData, followUpSent: e.target.checked })}
+                />
                 Follow-up Sent
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={formData.interested || false} onChange={(e) => setFormData({ ...formData, interested: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={formData.interested || false}
+                  onChange={(e) => setFormData({ ...formData, interested: e.target.checked })}
+                />
                 Interested
               </label>
             </div>
           </div>
-          
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 border border-stone-200 text-sm hover:bg-stone-50 transition-colors">Cancel</button>
             <button type="submit" className="flex-1 px-4 py-2.5 bg-stone-900 text-white text-sm hover:bg-stone-800 transition-colors">{lead ? 'Save' : 'Add Lead'}</button>
