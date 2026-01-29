@@ -129,33 +129,33 @@ const generateMessageWithAI = async (lead) => {
   const instagram = lead.instagram || '';
   const website = lead.website || '';
 
-  const prompt = `You are helping create a personalized Instagram DM for Visual Dept, a creative agency that provides AI-powered visual content services to DTC brands.
+  const prompt = `Write a short Instagram DM for Visual Dept, a creative agency that helps DTC brands with product visuals.
 
-CONTEXT:
-- Brand Name: ${brandName}
-- Contact Name: ${contactName || 'Unknown'}
+LEAD INFO:
+- Brand: ${brandName}
+- Contact: ${contactName || 'Unknown'}
 - Niche: ${niche}
-- Current Visual Quality: ${visualQuality}
 - Instagram: ${instagram ? `@${instagram}` : 'Unknown'}
-- Website: ${website || 'Unknown'}
 
-WRITING GUIDELINES:
-1. Keep it SHORT - max 4-5 sentences total
-2. Start with a warm, casual greeting (use first name if available)
-3. Include ONE specific compliment about their brand (be genuine, not generic)
-4. Briefly mention what you do (AI-powered visuals, 70% less than traditional shoots, 72-hour delivery)
-5. End with a soft, low-pressure CTA (offer to show examples or create a sample)
-6. Use natural, conversational tone - not salesy
-7. Include 1-2 emojis max, placed naturally
-8. NO hashtags, NO excessive punctuation
+EXAMPLE MESSAGES (match this exact style and length):
+"Hey! Your botanical body oils look luxurious. I run Visual Dept and we help brands create cohesive product visuals that showcase the quality and texture. Want a free concept mockup for one of your products?"
 
-PSYCHOLOGICAL PRINCIPLES TO USE:
-- Reciprocity: Offer value first (free sample/mockup)
-- Social proof: Subtly mention working with "brands like theirs"
-- Curiosity: Create interest without revealing everything
-- Personalization: Make them feel seen, not mass-messaged
+"Hey! Love the earthy aesthetic of your candle line. I run Visual Dept and we help brands create stunning product visuals that capture that cozy, artisanal vibe. Want a free concept mockup for one of your candles?"
 
-OUTPUT: Just the message text, nothing else. No quotes, no explanations.`;
+"Hey! Your serums look incredible. I run Visual Dept and we help skincare brands create clean, elevated product visuals. Want a free concept mockup for one of your products?"
+
+STRICT RULES:
+1. EXACTLY 3 sentences, no more
+2. Sentence 1: "Hey!" + ONE specific compliment about their products (mention something specific to their niche)
+3. Sentence 2: "I run Visual Dept and we help brands create [specific visual benefit relevant to their niche]."
+4. Sentence 3: "Want a free concept mockup for one of your products?"
+5. NO em dashes (—), NO colons in the middle of sentences
+6. NO emojis
+7. NO mentioning AI, pricing, or delivery times
+8. Keep it casual and conversational
+9. Total length: 40-60 words max
+
+OUTPUT: Just the message, nothing else.`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -189,24 +189,41 @@ OUTPUT: Just the message text, nothing else. No quotes, no explanations.`;
 // Fallback message generator (template-based)
 const generateFallbackMessage = (lead) => {
   const brandName = lead.brandName || 'your brand';
-  const contactName = lead.contactName || '';
   const niche = (lead.niche || 'beauty').toLowerCase();
   
-  const greeting = contactName ? `Hey ${contactName.split(' ')[0]}! 👋` : `Hey! 👋`;
+  let productCompliment = "Your products look amazing";
+  let visualBenefit = "create stunning product visuals that stand out";
   
-  let nicheCompliment = "Your brand has such a unique story";
-  if (niche.includes('skincare')) nicheCompliment = "The ingredients story you tell is so authentic";
-  else if (niche.includes('candle')) nicheCompliment = "The mood your candles create is everything";
-  else if (niche.includes('wellness')) nicheCompliment = "Your holistic approach really resonates";
-  else if (niche.includes('beauty')) nicheCompliment = "Love seeing brands committed to clean beauty";
+  if (niche.includes('skincare') || niche.includes('beauty')) {
+    productCompliment = "Your skincare line looks incredible";
+    visualBenefit = "create clean, elevated product visuals that highlight quality ingredients";
+  } else if (niche.includes('candle')) {
+    productCompliment = "Love the cozy aesthetic of your candle line";
+    visualBenefit = "create warm, inviting product visuals that capture that artisanal vibe";
+  } else if (niche.includes('wellness') || niche.includes('supplement')) {
+    productCompliment = "Your wellness products look so clean and modern";
+    visualBenefit = "create fresh, trustworthy product visuals that build credibility";
+  } else if (niche.includes('jewelry')) {
+    productCompliment = "Your jewelry pieces are stunning";
+    visualBenefit = "create elegant product visuals that showcase the craftsmanship";
+  } else if (niche.includes('home') || niche.includes('decor')) {
+    productCompliment = "Love the aesthetic of your home collection";
+    visualBenefit = "create lifestyle product visuals that inspire";
+  } else if (niche.includes('fashion') || niche.includes('activewear')) {
+    productCompliment = "Your pieces have such a unique style";
+    visualBenefit = "create dynamic product visuals that capture the look and feel";
+  } else if (niche.includes('haircare') || niche.includes('hair')) {
+    productCompliment = "Your haircare line looks luxurious";
+    visualBenefit = "create sleek product visuals that showcase the premium quality";
+  } else if (niche.includes('soap') || niche.includes('handmade')) {
+    productCompliment = "Love the handcrafted look of your products";
+    visualBenefit = "create artisanal product visuals that highlight the craftsmanship";
+  } else if (niche.includes('oil') || niche.includes('aromatherapy')) {
+    productCompliment = "Your botanical oils look luxurious";
+    visualBenefit = "create cohesive product visuals that showcase the quality and texture";
+  }
   
-  return `${greeting}
-
-${nicheCompliment}. I see so much potential in ${brandName}'s visual story.
-
-I help brands like yours create scroll-stopping visuals using AI—70% less than traditional shoots, delivered in 72 hours.
-
-Would love to show you what's possible—can I put together a quick visual concept for you?`;
+  return `Hey! ${productCompliment}. I run Visual Dept and we help brands ${visualBenefit}. Want a free concept mockup for one of your products?`;
 };
 
 export default function LeadGenDashboard() {
